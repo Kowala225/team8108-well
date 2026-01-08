@@ -114,7 +114,7 @@ python dataprocess/postprocess_predictions.py
 python dataprocess/filter_continuous.py
 ```
 
-適用場景：視頻序列預測，只保留連續出現 30 張的預測結果，過濾孤立誤判
+適用場景：只保留連續出現 30 張的預測結果，過濾孤立誤判
 
 
 ## 資料集配置
