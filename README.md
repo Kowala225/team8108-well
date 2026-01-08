@@ -1,82 +1,83 @@
 # AICUP 2025 心臟瓣膜辨識專案
 
-## 專案簡介
-AICUP 2025 心臟瓣膜辨識競賽，使用 YOLOv9m 物件偵測模型來辨識電腦斷層CT影像中的主動脈瓣膜。專案包含完整的資料前處理、資料集切分、資料增強、模型訓練與預測功能。
+## 簡介
+AICUP 2025 心臟瓣膜辨識競賽，使用 YOLOv9m 物件偵測模型來辨識電腦斷層CT影像中的主動脈瓣膜。專案包含完整的資料前處理、資料集切分、資料增強、模型訓練、預測與後處理功能。
 
-## 環境需求
+## 結構
 
-### Python 版本
-- Python 3.10
-
-### 套件依賴
-```bash
-ultralytics==8.3.248
+```
+team8108/
+├── dataprocess/             # 資料處理工具集
+│   ├── move.py              # 資料集切分（有標註，40:10比例）
+│   ├── moveother.py         # 資料集切分（無標註，2787張）
+│   ├── normalize_yolo.py    # 標註座標正規化
+│   ├── augment.py           # 資料增強（翻轉、旋轉、縮放）
+│   ├── post.py              # 預測後處理（保留最高分）
+│   └── filter.py            # 連續性過濾（視頻序列誤判過濾）
+├── train.py                 # 模型訓練腳本
+├── predict.py               # 模型預測腳本
+├── best.pt                  # 訓練好的模型權重
+└── aortic_valve_colab.yaml  # 資料集配置檔
 ```
 
-安裝方式：
-```bash
-pip install -r requirements.txt
-```
+## dataprocess 資料處理工具說明
 
-## 使用說明
-
-### 1. 資料前處理
-
-#### 資料集切分
-
-本專案使用兩階段的資料集切分策略，確保資料分配的合理性與一致性。
-
-**按 Patient 順序切分（40:10）**
-
-使用 [dataprocess/move.py](dataprocess/move.py) 將有標註的資料集按 patient 順序切分：
-
-```bash
-python dataprocess/move.py
-```
-
-**功能特點**：
+### 1. [move.py](dataprocess/move.py) - 資料集切分（有標註）
+**功能**：按 patient 順序切分有標註的資料集（40:10 比例）
 - 以 txt 標註檔案為基準進行切分
 - 前 40 個 patient → 訓練集
 - 後 10 個 patient → 驗證集
 - 自動配對對應的圖片檔案（.png）
+- 使用 `shutil.move` 直接移動檔案
+
+### 2. [moveother.py](dataprocess/moveother.py) - 資料集切分（無標註）
+**功能**：從剩餘圖片中隨機挑選 2787 張（無標註資料）
+- 隨機挑選 2787 張圖片（seed=42 可重現）
+- 根據 patient 編號自動分類：
+  - Patient 1-40 → 訓練集
+  - Patient 41-50 → 驗證集
+  - Patient 51+ → 跳過
+- 只處理圖片，無標註檔案
 
 
-**隨機挑選剩餘資料（2787張）**
+### 3. [normalize_yolo.py](dataprocess/normalize_yolo.py) - 標註正規化
+**功能**：確保 YOLO 格式標註檔案的座標值在有效範圍內
+- 限制類別編號為非負整數
+- 確保中心點座標 (x, y) 在 [0, 1] 範圍內
+- 確保寬高 (w, h) 在 [0.001, 1] 範圍內
+- 防止邊界框超出圖片範圍
 
-使用 [dataprocess/moveother.py](dataprocess/moveother.py) 從剩餘圖片中隨機挑選：
+### 4. [augment_yolo.py](dataprocess/augment_yolo.py) - 資料增強
+**功能**：針對有標註的影像進行資料增強，擴充訓練資料
+- **鏡像反轉**：水平翻轉影像與標註
+- **左右旋轉**：旋轉 ±15 度
+- **以 bbox 中心縮放**：
+  - 0.8x 縮放（放大視野）
+  - 1.2x 縮放（聚焦目標）
+- 只處理有標註檔案的影像，無標註者自動跳過
+- 每張圖片可生成 5 張增強圖片
 
-```bash
-python dataprocess/moveother.py
-```
+### 5. [post.py](dataprocess/post.py) - 預測後處理
+**功能**：處理模型預測結果，每張圖片只保留信心分數最高的預測框
+- 讀取所有預測框及其信心分數
+- 按信心分數排序
+- 只保留分數最高的預測框
+- 刪除其他較低分數的預測框
+- 自動備份原始預測結果
 
-#### 標註正規化
+**適用場景**：當模型對同一張圖片產生多個預測框時，只保留最可信的那一個
 
-確保 YOLO 格式標註檔案的座標值在有效範圍內（0-1之間）：
+### 6. [filter.py](dataprocess/filter.py) - 連續性過濾
+**功能**：過濾視頻序列中的誤判，只保留連續出現 N 張的預測結果
+- 從檔名提取序號（支援多種命名格式）
+- 分析預測結果的連續性
+- 只保留連續 N 張（預設 30 張）都有預測的片段
+- 刪除孤立或不連續的預測（視為誤判）
+- 顯示所有連續片段的起止範圍
 
-```bash
-python dataprocess/normalize_yolo.py <標註資料夾路徑> [輸出資料夾路徑]
+## 模型訓練
 
-```
-
-#### 資料增強
-
-使用 [dataprocess/augment_yolo.py](dataprocess/augment_yolo.py) 進行資料增強
-
-**支援的增強方法**：
-- 水平翻轉
-- 隨機旋轉（-15° ~ +15°）
-- 隨機亮度對比調整
-- 高斯雜訊
-- 影像模糊
-- 格式驗證與標準化
-
-### 2. 模型訓練
-
-使用 [train.py](train.py) 訓練模型：
-
-```bash
-python train.py
-```
+使用 [train.py](train.py) 訓練模型： 100 個 epoch 的訓練：
 
 **訓練參數**：
 - **預訓練模型**: `yolov9m.pt`（YOLO官方預訓練權重）
@@ -86,13 +87,9 @@ python train.py
 - **圖片尺寸**: 640×640
 - **運算裝置**: GPU (device=0)
 
-### 3. 模型預測
+## 模型預測
 
 使用 [predict.py](predict.py) 進行預測：
-
-```bash
-python predict.py
-```
 
 **預測參數**：
 - **模型權重**: `best.pt`
@@ -101,15 +98,32 @@ python predict.py
 - **運算裝置**: GPU (device=0)
 - **結果儲存**: 自動儲存標註後的圖片至 `runs/detect/`
 
-## 訓練結果
+## 預測結果後處理
 
-根據 [results.csv](runs/train/train/results.csv) 顯示的訓練指標，模型已完成100個epoch的訓練，表現如下：
+**1 保留最高分預測框**（處理多框問題）
+
+```bash
+python dataprocess/postprocess_predictions.py
+```
+
+適用場景：當模型對同一張圖片產生多個預測框時
+
+**2 連續性過濾**（處理視頻序列誤判）
+
+```bash
+python dataprocess/filter_continuous.py
+```
+
+適用場景：視頻序列預測，只保留連續出現 30 張的預測結果，過濾孤立誤判
+
 
 ## 資料集配置
 
 [aortic_valve_colab.yaml](aortic_valve_colab.yaml) 定義資料集路徑與類別：
 
-```yaml
+
+## yaml
+```
 train: "./datasets/train/images"
 val: "./datasets/val/images"
 test: "./datasets/test/images"
