@@ -40,16 +40,6 @@ python dataprocess/move.py
 - 後 10 個 patient → 驗證集
 - 自動配對對應的圖片檔案（.png）
 
-**配置方式**：編輯腳本頂部的 `CONFIG` 字典
-```python
-CONFIG = {
-    'image_dir': r"C:\path\to\training_image",    # 圖片資料夾
-    'label_dir': r"C:\path\to\training_label",    # 標註資料夾
-    'output_dir': r"./datasets",                  # 輸出目錄
-    'train_ratio': 40,                            # 訓練集patient數量
-    'val_ratio': 10,                              # 驗證集patient數量
-}
-```
 
 **隨機挑選剩餘資料（2787張）**
 
@@ -114,15 +104,6 @@ python predict.py
 ## 訓練結果
 
 根據 [results.csv](runs/train/train/results.csv) 顯示的訓練指標，模型已完成100個epoch的訓練，表現如下：
-
-### 最佳指標
-
-| 指標 | 數值 | Epoch |
-|------|------|-------|
-| 最佳 mAP50 | 96.7% | 第81輪 |
-| 最佳 mAP50-95 | 70.9% | 第81輪 |
-| 最佳 Precision | 92.0% | 第41輪 |
-| 最佳 Recall | 92.1% | 第49輪 |
 
 ## 資料集配置
 
